@@ -97,6 +97,7 @@ if __name__ == '__main__':
     try:
         pred_header.astype(float)
         print("Please add a descriptive header text to your predictor file; make sure that 'time' is the 1st column")
+        # TODO: We actually need to fail here but I'm not sure if it is a good idea to raise an exception in a try block
     except ValueError:
         pred_data = np.genfromtxt(pred_path, delimiter=",", skip_header=1)
 
@@ -211,3 +212,6 @@ if __name__ == '__main__':
     #  separate receptive field for each predictor. In other words the shape of the Jacobian will be
     #  n_neurons x n_predictors x n_timepoints. Option 1: Save one output CSV file per predictor which contains
     #  the receptive fields of all neurons. Option 2: Dump them all into an hdf 5 file
+
+    # finally quit at app
+    app.exit(0)
