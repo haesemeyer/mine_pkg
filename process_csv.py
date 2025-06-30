@@ -40,6 +40,10 @@ if __name__ == '__main__':
                                                   "approximation to consider the fit 2nd order.",
                           type=float, default=0.5)
     a_parser.add_argument("-n", "--model_name", help="Name of model for file saving purposes.", type=str)
+    a_parser.add_argument("-mh", "--history", help="The length of model history in time units.",
+                          type=float, default=10.0)
+    a_parser.add_argument("-tl", "--taylor_look", help="Determines taylor look ahead as multiplier of history",
+                          type=float, default=0.5)
 
     args = a_parser.parse_args()
 
@@ -65,18 +69,13 @@ if __name__ == '__main__':
     your_model = args.model_name
     lax_thresh = args.th_lax
     sqr_thresh = args.th_sqr
+    history_time = args.history
+    taylor_look_fraction = args.taylor_look
     if your_model is None:
         # set to default to file name of predictors
         your_model = path.splitext(path.split(resp_path)[-1])[0]
 
     # TODO: Implement second configuration "interface" allowing user to specify parameters in a config file
-
-    # TODO: The model history has to be a parameter and the same goes for the Taylor predict ahead. However, we cannot
-    #  have the user specify this in "number of frames" since our interpolation will affect the meaning of that. In
-    #  other words the user needs to specify the history length in "time units" which is whatever unit is used
-    #  for time-stamps in the predictor and response files. Then after interpolation, we transform this into an integer
-    #  number of frames that we pass to MINE.
-    #  The taylor-look-ahead might best be specified in multiples of the history length with the value being 0.5 by default
 
     ###
     # Load and process data
@@ -127,6 +126,18 @@ if __name__ == '__main__':
 
     mine_resp = safe_standardize(ip_resp_data[:, 1:]).T
 
+    # compute our "frame rate", i.e. frames per time-unit on the interpolated scale
+    ip_rate = 1 / np.mean(np.diff(ip_time))
+    # based on the rate, compute the number of frames within the model history and taylor-look-ahead
+    model_history = int(np.round(history_time * ip_rate, 0))
+    if model_history < 1:
+        model_history = 1
+    taylor_look_ahead = int(np.round(model_history * taylor_look_fraction, 0))
+    if taylor_look_ahead < 1:
+        taylor_look_ahead = 1
+    print(f"Model history is {model_history} frames")
+    print(f"Taylor look ahead is {taylor_look_ahead} frames")
+
     ###
     # Fit model
     ###
@@ -134,7 +145,7 @@ if __name__ == '__main__':
 
     with h5py.File(f"{your_model}.hdf5", "w") as weight_file:
         w_grp = weight_file.create_group(f"{your_model}_weights")
-        miner = Mine(2.0 / 3, 50, test_corr_thresh, True, False, 25, 5)
+        miner = Mine(2.0 / 3, model_history, test_corr_thresh, True, False, taylor_look_ahead, 5)
         miner.verbose = True
         miner.model_weight_store = w_grp
         mdata = miner.analyze_data(mine_pred, mine_resp)
@@ -144,7 +155,7 @@ if __name__ == '__main__':
         mine_resp_shuff = np.roll(mine_resp, mine_resp.shape[1] // 2, axis=1)
         with h5py.File(f"{your_model}.hdf5", "a") as weight_file:
             w_grp = weight_file.create_group(f"{your_model}_weights_shuffled")
-            miner = Mine(2 / 3, 50, test_corr_thresh, False, False, 25, 5)
+            miner = Mine(2 / 3, model_history, test_corr_thresh, False, False, taylor_look_ahead, 5)
             miner.verbose = True
             miner.model_weight_store = w_grp
             mdata_shuff = miner.analyze_data(mine_pred, mine_resp_shuff)
