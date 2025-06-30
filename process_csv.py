@@ -43,14 +43,14 @@ if __name__ == '__main__':
 
     args = a_parser.parse_args()
 
-    resp_path = args.predictors
+    resp_path = args.responses
     if resp_path is None:
         resp_path = QFileDialog.getOpenFileName(filter="CSV (*.csv)", caption="Select response file",
                                                 options=QFileDialog.DontUseNativeDialog)[0]
         if resp_path == "":
             print("No response file selected")
             exit(1)
-    pred_path = args.responses
+    pred_path = args.predictors
     if pred_path is None:
         pred_path = QFileDialog.getOpenFileName(filter="CSV (*.csv)", caption="Select predictor file",
                                                 options=QFileDialog.DontUseNativeDialog)[0]
