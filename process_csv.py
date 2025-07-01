@@ -144,7 +144,7 @@ if __name__ == '__main__':
     ###
     mdata_shuff = None
 
-    with h5py.File(f"{your_model}.hdf5", "w") as weight_file:
+    with h5py.File(path.join(path.split(resp_path)[0], f"{your_model}.hdf5"), "w") as weight_file:
         w_grp = weight_file.create_group(f"{your_model}_weights")
         miner = Mine(2.0 / 3, model_history, test_corr_thresh, True, False, taylor_look_ahead, 5)
         miner.verbose = True
@@ -154,14 +154,14 @@ if __name__ == '__main__':
     # rotate mine_resp on user request and re-fit without computing any Taylor just to get test correlations
     if run_shuffle:
         mine_resp_shuff = np.roll(mine_resp, mine_resp.shape[1] // 2, axis=1)
-        with h5py.File(f"{your_model}.hdf5", "a") as weight_file:
+        with h5py.File(path.join(path.split(resp_path)[0], f"{your_model}.hdf5"), "a") as weight_file:
             w_grp = weight_file.create_group(f"{your_model}_weights_shuffled")
             miner = Mine(2 / 3, model_history, test_corr_thresh, False, False, taylor_look_ahead, 5)
             miner.verbose = True
             miner.model_weight_store = w_grp
             mdata_shuff = miner.analyze_data(mine_pred, mine_resp_shuff)
 
-    with h5py.File(f"{your_model}_analysis.hdf5", "w") as ana_file:
+    with h5py.File(path.join(path.split(resp_path)[0], f"{your_model}_analysis.hdf5"), "w") as ana_file:
         ana_grp = ana_file.create_group(f"analysis")
         mdata.save_to_hdf5(ana_grp)
         if mdata_shuff is not None:
@@ -206,7 +206,7 @@ if __name__ == '__main__':
                 taylor_is_sig = taylor_mean - n_sigma * taylor_std - taylor_cutoff
                 interpret_dict[pc].append("Y" if taylor_is_sig > 0 else "N")
     interpret_df = pd.DataFrame(interpret_dict)
-    interpret_df.to_csv(interpret_name, index=False)
+    interpret_df.to_csv(path.join(path.split(resp_path)[0], interpret_name), index=False)
 
     # TODO: Figure out a good way to save Jacobians (i.e. receptive fields) - note that each neuron will have a
     #  separate receptive field for each predictor. In other words the shape of the Jacobian will be
