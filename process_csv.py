@@ -8,6 +8,8 @@ import os
 from os import path
 from PyQt5.QtWidgets import QFileDialog, QApplication
 from sys import exit
+import upsetplot as ups
+import matplotlib.pyplot as pl
 
 if __name__ == '__main__':
     app = QApplication([])
@@ -213,5 +215,18 @@ if __name__ == '__main__':
     #  n_neurons x n_predictors x n_timepoints. Option 1: Save one output CSV file per predictor which contains
     #  the receptive fields of all neurons. Option 2: Dump them all into an hdf 5 file
 
-    # finally quit at app
+    # perform barcode clustering
+    barcode_labels = [ph for ph in predictor_columns] + ["Nonlinear"]
+    barcode = np.hstack([(np.array(interpret_df[ph])=="Y")[:, None] for ph in predictor_columns])
+    barcode = np.c_[barcode, (np.array(interpret_df["Linearity"])!="linear")[:, None]]
+    df_barcode = pd.DataFrame(barcode, columns=barcode_labels)
+    aggregate = ups.from_indicators(df_barcode)
+    fig = pl.figure()
+    up_set = ups.UpSet(aggregate, subset_size='count', min_subset_size=1, facecolor="C1", sort_by='cardinality',
+                       sort_categories_by=None)
+    axes_dict = up_set.plot(fig)
+    axes_dict['intersections'].set_yscale('log')
+    fig.savefig(path.join(path.split(resp_path)[0], f"{your_model}_BarcodeUpsetPlot.pdf"))
+
+    # finally quit qt app
     app.exit(0)
