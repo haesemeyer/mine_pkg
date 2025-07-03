@@ -216,6 +216,7 @@ if __name__ == '__main__':
     #  the receptive fields of all neurons. Option 2: Dump them all into an hdf 5 file
 
     # perform barcode clustering
+    interpret_df = interpret_df[interpret_df["Fit"] == "Y"]
     barcode_labels = [ph for ph in predictor_columns] + ["Nonlinear"]
     barcode = np.hstack([(np.array(interpret_df[ph])=="Y")[:, None] for ph in predictor_columns])
     barcode = np.c_[barcode, (np.array(interpret_df["Linearity"])!="linear")[:, None]]
