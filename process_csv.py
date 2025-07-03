@@ -7,9 +7,14 @@ import argparse
 import os
 from os import path
 from PyQt5.QtWidgets import QFileDialog, QApplication
-from sys import exit
 import upsetplot as ups
 import matplotlib.pyplot as pl
+
+
+class MineException(Exception):
+    def __init__(self, message):
+        super().__init__(message)
+
 
 if __name__ == '__main__':
     app = QApplication([])
@@ -54,15 +59,15 @@ if __name__ == '__main__':
         resp_path = QFileDialog.getOpenFileName(filter="CSV (*.csv)", caption="Select response file",
                                                 options=QFileDialog.DontUseNativeDialog)[0]
         if resp_path == "":
-            print("No response file selected")
-            exit(1)
+            app.exit(0)
+            raise MineException("No response file selected")
     pred_path = args.predictors
     if pred_path is None:
         pred_path = QFileDialog.getOpenFileName(filter="CSV (*.csv)", caption="Select predictor file",
                                                 options=QFileDialog.DontUseNativeDialog)[0]
         if pred_path == "":
-            print("No predictor file selected")
-            exit(1)
+            app.exit(0)
+            raise MineException("No predictor file selected")
     time_as_pred = args.use_time
     run_shuffle = args.run_shuffle
     test_corr_thresh = args.th_corr
@@ -96,12 +101,18 @@ if __name__ == '__main__':
 
     pred_header = np.genfromtxt(pred_path, delimiter=",", max_rows=1, dtype=str)
 
+    no_pred_header = False
+
     try:
         pred_header.astype(float)
-        print("Please add a descriptive header text to your predictor file; make sure that 'time' is the 1st column")
-        # TODO: We actually need to fail here but I'm not sure if it is a good idea to raise an exception in a try block
+        no_pred_header = True
     except ValueError:
         pred_data = np.genfromtxt(pred_path, delimiter=",", skip_header=1)
+
+    if no_pred_header:
+        # Without the header we will not proceed
+        app.exit(0)
+        raise MineException("Please add a descriptive header text to your predictor file; make sure that 'time' is the 1st column")
 
     pred_time = np.nanmax(pred_data, axis=0)[0]
     resp_time = np.nanmax(resp_data, axis=0)[0]
