@@ -59,14 +59,16 @@ if __name__ == '__main__':
         resp_path = QFileDialog.getOpenFileName(filter="CSV (*.csv)", caption="Select response file",
                                                 options=QFileDialog.DontUseNativeDialog)[0]
         if resp_path == "":
-            app.exit(0)
+            app.quit()
+            del app
             raise MineException("No response file selected")
     pred_path = args.predictors
     if pred_path is None:
         pred_path = QFileDialog.getOpenFileName(filter="CSV (*.csv)", caption="Select predictor file",
                                                 options=QFileDialog.DontUseNativeDialog)[0]
         if pred_path == "":
-            app.exit(0)
+            app.quit()
+            del app
             raise MineException("No predictor file selected")
     time_as_pred = args.use_time
     run_shuffle = args.run_shuffle
@@ -111,7 +113,8 @@ if __name__ == '__main__':
 
     if no_pred_header:
         # Without the header we will not proceed
-        app.exit(0)
+        app.quit()
+        del app
         raise MineException("Please add a descriptive header text to your predictor file; make sure that 'time' is the 1st column")
 
     pred_time = np.nanmax(pred_data, axis=0)[0]
@@ -157,7 +160,7 @@ if __name__ == '__main__':
     ###
     mdata_shuff = None
 
-    with h5py.File(path.join(path.split(resp_path)[0], f"{your_model}.hdf5"), "w") as weight_file:
+    with h5py.File(path.join(path.split(resp_path)[0], f"{your_model}_weights.hdf5"), "w") as weight_file:
         w_grp = weight_file.create_group(f"{your_model}_weights")
         miner = Mine(2.0 / 3, model_history, test_corr_thresh, True, False, taylor_look_ahead, 5)
         miner.verbose = True
@@ -174,7 +177,7 @@ if __name__ == '__main__':
             miner.model_weight_store = w_grp
             mdata_shuff = miner.analyze_data(mine_pred, mine_resp_shuff)
 
-    with h5py.File(path.join(path.split(resp_path)[0], f"{your_model}_analysis.hdf5"), "w") as ana_file:
+    with h5py.File(path.join(path.split(resp_path)[0], f"{your_model}_full_analysis.hdf5"), "w") as ana_file:
         ana_grp = ana_file.create_group(f"analysis")
         mdata.save_to_hdf5(ana_grp)
         if mdata_shuff is not None:
@@ -242,3 +245,5 @@ if __name__ == '__main__':
 
     # finally quit qt app
     app.exit(0)
+    app.quit()
+    del app
