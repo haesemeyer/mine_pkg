@@ -51,6 +51,8 @@ if __name__ == '__main__':
                           type=float, default=10.0)
     a_parser.add_argument("-tl", "--taylor_look", help="Determines taylor look ahead as multiplier of history",
                           type=float, default=0.5)
+    a_parser.add_argument("-j", "--jacobian", help="Store the Jacobians (linear receptive fields) for each neuron.",
+                          action='store_true')
 
     args = a_parser.parse_args()
 
@@ -80,6 +82,7 @@ if __name__ == '__main__':
     sqr_thresh = args.th_sqr
     history_time = args.history
     taylor_look_fraction = args.taylor_look
+    fit_jacobian = args.jacobian
     if your_model is None:
         # set to default to file name of predictors
         your_model = path.splitext(path.split(resp_path)[-1])[0]
@@ -160,9 +163,10 @@ if __name__ == '__main__':
     ###
     mdata_shuff = None
 
-    with h5py.File(path.join(path.split(resp_path)[0], f"{your_model}_weights.hdf5"), "w") as weight_file:
+    weight_file_name = f"MINE_{your_model}_weights.hdf5"
+    with h5py.File(path.join(path.split(resp_path)[0], weight_file_name), "w") as weight_file:
         w_grp = weight_file.create_group(f"{your_model}_weights")
-        miner = Mine(2.0 / 3, model_history, test_corr_thresh, True, False, taylor_look_ahead, 5)
+        miner = Mine(2.0 / 3, model_history, test_corr_thresh, True, fit_jacobian, taylor_look_ahead, 5)
         miner.verbose = True
         miner.model_weight_store = w_grp
         mdata = miner.analyze_data(mine_pred, mine_resp)
@@ -170,14 +174,15 @@ if __name__ == '__main__':
     # rotate mine_resp on user request and re-fit without computing any Taylor just to get test correlations
     if run_shuffle:
         mine_resp_shuff = np.roll(mine_resp, mine_resp.shape[1] // 2, axis=1)
-        with h5py.File(path.join(path.split(resp_path)[0], f"{your_model}.hdf5"), "a") as weight_file:
+        with h5py.File(path.join(path.split(resp_path)[0], weight_file_name), "a") as weight_file:
             w_grp = weight_file.create_group(f"{your_model}_weights_shuffled")
             miner = Mine(2 / 3, model_history, test_corr_thresh, False, False, taylor_look_ahead, 5)
             miner.verbose = True
             miner.model_weight_store = w_grp
             mdata_shuff = miner.analyze_data(mine_pred, mine_resp_shuff)
 
-    with h5py.File(path.join(path.split(resp_path)[0], f"{your_model}_full_analysis.hdf5"), "w") as ana_file:
+    full_ana_file_name = f"MINE_{your_model}_analysis.hdf5"
+    with h5py.File(path.join(path.split(resp_path)[0], full_ana_file_name), "w") as ana_file:
         ana_grp = ana_file.create_group(f"analysis")
         mdata.save_to_hdf5(ana_grp)
         if mdata_shuff is not None:
@@ -189,7 +194,7 @@ if __name__ == '__main__':
     ###
     predictor_columns = pred_header if time_as_pred == 'Y' else pred_header[1:]
     interpret_dict = {"Neuron": [], "Fit": []} | {ph: [] for ph in predictor_columns} | {"Linearity": []}
-    interpret_name = f"MINE_Insights_{your_model}.csv"
+    interpret_name = f"MINE_{your_model}_Insights.csv"
     n_objects = mdata.correlations_test.size
     # for taylor analysis (which predictors are important) compute our significance levels based on a) user input
     # and b) the number of neurons above threshold which gives the multiple-comparison correction - bonferroni
@@ -224,10 +229,31 @@ if __name__ == '__main__':
     interpret_df = pd.DataFrame(interpret_dict)
     interpret_df.to_csv(path.join(path.split(resp_path)[0], interpret_name), index=False)
 
-    # TODO: Figure out a good way to save Jacobians (i.e. receptive fields) - note that each neuron will have a
-    #  separate receptive field for each predictor. In other words the shape of the Jacobian will be
-    #  n_neurons x n_predictors x n_timepoints. Option 1: Save one output CSV file per predictor which contains
-    #  the receptive fields of all neurons. Option 2: Dump them all into an hdf 5 file
+    # save Jacobians: One CSV file for each predictor, containing the Jacobians for each neuron
+    # column headers will be the time delay relative to t=0, since our modeling is set up
+    # such that convolutions are restricted to the past (hence model_history)
+    def time_from_index(ix: int) -> float:
+        ix_corr = ix - model_history + 1  # at model history is timepoint 0
+        return ip_rate * ix_corr
+
+    if fit_jacobian:
+        for i, pc in enumerate(predictor_columns):
+            jac_dict = {"Neuron": []} | {f"{time_from_index(t)}": [] for t in range(model_history)}
+            jac_file_name = f"MINE_{your_model}_ReceptiveFields_{pc}.csv"
+            for j in range(n_objects):
+                if np.any(np.isnan(mdata.jacobians[j, :])):
+                    continue
+                neuron = j if not resp_has_header else resp_header[
+                    j + 1]  # because resp_header still contains the first "time" column
+                jac_dict["Neuron"].append(neuron)
+                # index out the predictor related receptive field
+                rf = mdata.jacobians[j, i*model_history:(i+1)*model_history]
+                for t in range(model_history):
+                    jac_dict[f"{time_from_index(t)}"].append(rf[t])
+            df_jac = pd.DataFrame(jac_dict)
+            df_jac.to_csv(path.join(path.split(resp_path)[0], jac_file_name), index=False)
+
+
 
     # perform barcode clustering
     interpret_df = interpret_df[interpret_df["Fit"] == "Y"]
@@ -241,7 +267,7 @@ if __name__ == '__main__':
                        sort_categories_by=None)
     axes_dict = up_set.plot(fig)
     axes_dict['intersections'].set_yscale('log')
-    fig.savefig(path.join(path.split(resp_path)[0], f"{your_model}_BarcodeUpsetPlot.pdf"))
+    fig.savefig(path.join(path.split(resp_path)[0], f"MINE_{your_model}_BarcodeUpsetPlot.pdf"))
 
     # finally quit qt app
     app.quit()
