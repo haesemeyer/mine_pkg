@@ -1,3 +1,5 @@
+from importlib.resources import open_text
+
 import pandas as pd
 import numpy as np
 from mine import Mine
@@ -9,11 +11,34 @@ from os import path
 from PyQt5.QtWidgets import QFileDialog, QApplication
 import upsetplot as ups
 import matplotlib.pyplot as pl
+import json
+from datetime import datetime
 
 
 class MineException(Exception):
     def __init__(self, message):
         super().__init__(message)
+
+
+class ConfigException(Exception):
+    def __init__(self, message):
+        super().__init__(message)
+
+
+default_options = {
+    "use_time": False,
+    "run_shuffle": False,
+    "th_corr": np.sqrt(0.5),
+    "taylor_sig": 0.05,
+    "taylor_cut": 0.1,
+    "th_lax": 0.8,
+    "th_sqr": 0.5,
+    "history": 10.0,
+    "taylor_look": 0.5,
+    "jacobian": False,
+    "n_epochs": 100,
+    "miner_verbose": True
+}
 
 
 if __name__ == '__main__':
@@ -34,25 +59,26 @@ if __name__ == '__main__':
                           action='store_true')
     a_parser.add_argument("-ct", "--th_corr", help="The test correlation threshold to "
                                                    "decide that fit was successful.",
-                          type=float, default=np.sqrt(0.5))
+                          type=float, default=default_options['th_corr'])
     a_parser.add_argument("-ts", "--taylor_sig", help="The significance threshold for taylor expansion.",
-                          type=float, default=0.05)
+                          type=float, default=default_options['taylor_sig'])
     a_parser.add_argument("-tc", "--taylor_cut", help="The variance fraction that has to be lost to"
                                                       "consider component important for fit.",
-                          type=float, default=0.1)
+                          type=float, default=default_options['taylor_cut'])
     a_parser.add_argument("-la", "--th_lax", help="The threshold of variance explained by the linear"
                                                       "approximation to consider the fit linear.",
-                          type=float, default=0.8)
+                          type=float, default=default_options['th_lax'])
     a_parser.add_argument("-lsq", "--th_sqr", help="The threshold of variance explained by the 2nd order"
                                                   "approximation to consider the fit 2nd order.",
-                          type=float, default=0.5)
+                          type=float, default=default_options['th_sqr'])
     a_parser.add_argument("-n", "--model_name", help="Name of model for file saving purposes.", type=str)
     a_parser.add_argument("-mh", "--history", help="The length of model history in time units.",
-                          type=float, default=10.0)
+                          type=float, default=default_options['history'])
     a_parser.add_argument("-tl", "--taylor_look", help="Determines taylor look ahead as multiplier of history",
-                          type=float, default=0.5)
+                          type=float, default=default_options['taylor_look'])
     a_parser.add_argument("-j", "--jacobian", help="Store the Jacobians (linear receptive fields) for each neuron.",
                           action='store_true')
+    a_parser.add_argument("-o", "--config", help="Path to config file with run parameters.", type=str)
 
     args = a_parser.parse_args()
 
@@ -72,22 +98,71 @@ if __name__ == '__main__':
             app.quit()
             del app
             raise MineException("No predictor file selected")
-    time_as_pred = args.use_time
-    run_shuffle = args.run_shuffle
-    test_corr_thresh = args.th_corr
-    taylor_sig = args.taylor_sig
-    taylor_cutoff = args.taylor_cut
-    your_model = args.model_name
-    lax_thresh = args.th_lax
-    sqr_thresh = args.th_sqr
-    history_time = args.history
-    taylor_look_fraction = args.taylor_look
-    fit_jacobian = args.jacobian
-    if your_model is None:
+
+    config_dict = None
+    if args.config is not None:
+        if not path.exists(args.config):
+            raise ConfigException("Config file does not exist")
+        if not path.isfile(args.config):
+            raise ConfigException("Config path is not a file")
+        try:
+            config_dict = json.load(open(args.config))["config"]
+        except json.decoder.JSONDecodeError or UnicodeDecodeError:
+            raise ConfigException("Config file does not contain valid JSON")
+        except KeyError:
+            raise ConfigException("Config file does not contain config section")
+    else:
+        # set to default options
+        config_dict = default_options
+
+    # any argument given on the command line will supersede corresponding options in the config dict
+    time_as_pred = config_dict["use_time"] if args.use_time == default_options["use_time"] else args.use_time
+    run_shuffle = config_dict["run_shuffle"] if args.run_shuffle == default_options["run_shuffle"] else args.run_shuffle
+    test_corr_thresh = config_dict["th_corr"] if np.isclose(args.th_corr, default_options["th_corr"]) else args.th_corr
+    taylor_sig = config_dict["taylor_sig"] if np.isclose(args.taylor_sig, default_options["taylor_sig"]) else args.taylor_sig
+    taylor_cutoff = config_dict["taylor_cut"] if np.isclose(args.taylor_cut, default_options["taylor_cut"]) else args.taylor_cut
+    lax_thresh = config_dict["th_lax"] if np.isclose(args.th_lax, default_options["th_lax"]) else args.th_lax
+    sqr_thresh = config_dict["th_sqr"] if np.isclose(args.th_sqr, default_options["th_sqr"]) else args.th_sqr
+    history_time = config_dict["history"] if np.isclose(args.history, default_options["history"]) else args.history
+    taylor_look_fraction = config_dict["taylor_look"] if np.isclose(args.taylor_look, default_options["taylor_look"]) else args.taylor_look
+    fit_jacobian = config_dict["jacobian"] if args.jacobian == default_options["jacobian"] else args.jacobian
+
+    if args.model_name is None:
         # set to default to file name of predictors
         your_model = path.splitext(path.split(resp_path)[-1])[0]
+    else:
+        your_model = args.model_name
 
-    # TODO: Implement second configuration "interface" allowing user to specify parameters in a config file
+    fit_epochs = config_dict["n_epochs"]
+    miner_verbose = config_dict["miner_verbose"]
+
+    # save configuration used as json file
+    configuration = {
+        "config":
+            {
+                "use_time": time_as_pred,
+                "run_shuffle": run_shuffle,
+                "th_corr": test_corr_thresh,
+                "taylor_sig": taylor_sig,
+                "taylor_cut": taylor_cutoff,
+                "th_lax": lax_thresh,
+                "th_sqr": sqr_thresh,
+                "history": history_time,
+                "taylor_look": taylor_look_fraction,
+                "jacobian": fit_jacobian,
+                "n_epochs": fit_epochs,
+                "miner_verbose": miner_verbose
+            },
+        "run":
+            {
+                "model_name": your_model,
+                "predictor_file": pred_path,
+                "response_file": resp_path,
+                "timestamp": datetime.now().now().isoformat(),
+            }
+    }
+    with open(f"MINE_{your_model}_run_config.json", 'w') as config_file:
+        json.dump(configuration, config_file, indent=2)
 
     ###
     # Load and process data
@@ -167,7 +242,8 @@ if __name__ == '__main__':
     with h5py.File(path.join(path.split(resp_path)[0], weight_file_name), "w") as weight_file:
         w_grp = weight_file.create_group(f"{your_model}_weights")
         miner = Mine(2.0 / 3, model_history, test_corr_thresh, True, fit_jacobian, taylor_look_ahead, 5)
-        miner.verbose = True
+        miner.n_epochs = fit_epochs
+        miner.verbose = miner_verbose
         miner.model_weight_store = w_grp
         mdata = miner.analyze_data(mine_pred, mine_resp)
 
@@ -177,7 +253,8 @@ if __name__ == '__main__':
         with h5py.File(path.join(path.split(resp_path)[0], weight_file_name), "a") as weight_file:
             w_grp = weight_file.create_group(f"{your_model}_weights_shuffled")
             miner = Mine(2 / 3, model_history, test_corr_thresh, False, False, taylor_look_ahead, 5)
-            miner.verbose = True
+            miner.n_epochs = fit_epochs
+            miner.verbose = miner_verbose
             miner.model_weight_store = w_grp
             mdata_shuff = miner.analyze_data(mine_pred, mine_resp_shuff)
 
